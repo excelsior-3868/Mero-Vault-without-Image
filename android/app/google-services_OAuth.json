@@ -1,0 +1,9 @@
+{
+    "installed": {
+        "client_id": "142677507046-2hg94j87e71lhud68a6b6h3vo42l40rl.apps.googleusercontent.com",
+        "project_id": "merovault",
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
+    }
+}
