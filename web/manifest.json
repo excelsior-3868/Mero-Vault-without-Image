@@ -1,6 +1,6 @@
 {
-    "name": "merovault",
-    "short_name": "merovault",
+    "name": "Mero Vault",
+    "short_name": "Mero Vault",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

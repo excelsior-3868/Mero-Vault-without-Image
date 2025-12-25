@@ -13,11 +13,7 @@ class VaultField {
   });
 
   Map<String, dynamic> toJson() {
-    return {
-      'label': label,
-      'value': value,
-      'is_obscured': isObscured,
-    };
+    return {'label': label, 'value': value, 'is_obscured': isObscured};
   }
 
   factory VaultField.fromJson(Map<String, dynamic> json) {
@@ -44,10 +40,7 @@ class VaultEntry {
     required this.updatedAt,
   });
 
-  factory VaultEntry.create({
-    required String title,
-    List<VaultField>? fields,
-  }) {
+  factory VaultEntry.create({required String title, List<VaultField>? fields}) {
     final now = DateTime.now().toUtc();
     return VaultEntry(
       id: const Uuid().v4(),
@@ -72,7 +65,13 @@ class VaultEntry {
         fieldsList.add(VaultField(label: 'Username', value: json['username']));
       }
       if (json['password'] != null) {
-        fieldsList.add(VaultField(label: 'Password', value: json['password'], isObscured: true));
+        fieldsList.add(
+          VaultField(
+            label: 'Password',
+            value: json['password'],
+            isObscured: true,
+          ),
+        );
       }
       if (json['url'] != null && (json['url'] as String).isNotEmpty) {
         fieldsList.add(VaultField(label: 'URL', value: json['url']));
@@ -87,7 +86,9 @@ class VaultEntry {
       title: json['title'] as String,
       fields: fieldsList,
       createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String? ?? json['created_at'] as String),
+      updatedAt: DateTime.parse(
+        json['updated_at'] as String? ?? json['created_at'] as String,
+      ),
     );
   }
 
@@ -103,11 +104,13 @@ class VaultEntry {
 }
 
 class VaultData {
+  final String? vaultName;
   final String version;
   final DateTime lastUpdated;
   final List<VaultEntry> entries;
 
   VaultData({
+    this.vaultName,
     required this.version,
     required this.lastUpdated,
     required this.entries,
@@ -116,19 +119,25 @@ class VaultData {
   factory VaultData.fromJson(Map<String, dynamic> json) {
     final meta = json['vault_meta'] as Map<String, dynamic>? ?? {};
     final entriesList = json['entries'] as List<dynamic>? ?? [];
-    
+
     return VaultData(
-      version: meta['version'] as String? ?? '1.2', // Bump version for dynamic fields
-      lastUpdated: meta['last_updated'] != null 
-          ? DateTime.parse(meta['last_updated'] as String) 
+      vaultName: meta['vault_name'] as String? ?? 'My Secure Vault',
+      version:
+          meta['version'] as String? ??
+          '1.2', // Bump version for dynamic fields
+      lastUpdated: meta['last_updated'] != null
+          ? DateTime.parse(meta['last_updated'] as String)
           : DateTime.now().toUtc(),
-      entries: entriesList.map((e) => VaultEntry.fromJson(e as Map<String, dynamic>)).toList(),
+      entries: entriesList
+          .map((e) => VaultEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'vault_meta': {
+        'vault_name': vaultName ?? 'My Secure Vault',
         'version': version,
         'encryption': 'AES-256-GCM',
         'last_updated': lastUpdated.toIso8601String(),

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/vault_provider.dart';
-import '../home/dashboard_screen.dart';
+import '../navigation/nav_bar_wrapper.dart';
+import '../../services/biometric_service.dart';
+import '../../widgets/branded_app_bar.dart';
+import '../../utils/transitions.dart';
 
 class CreateVaultScreen extends StatefulWidget {
   const CreateVaultScreen({super.key});
@@ -11,41 +14,74 @@ class CreateVaultScreen extends StatefulWidget {
 }
 
 class _CreateVaultScreenState extends State<CreateVaultScreen> {
+  final _nameController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _confirmController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
+  bool _isPasswordVisible = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
 
   Future<void> _createVault() async {
-    if (_passwordController.text != _confirmController.text) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Passwords do not match')),
-      );
-      return;
-    }
-    if (_passwordController.text.length < 8) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password must be at least 8 characters')),
-      );
-      return;
-    }
+    FocusScope.of(context).unfocus();
+    if (!_formKey.currentState!.validate()) return;
+
+    final bioService = Provider.of<BiometricService>(context, listen: false);
+    final vaultProvider = Provider.of<VaultProvider>(context, listen: false);
 
     setState(() => _isLoading = true);
-    
+
     try {
-      final vaultProvider = Provider.of<VaultProvider>(context, listen: false);
-      await vaultProvider.createNewVault(_passwordController.text);
-      
+      final password = _passwordController.text;
+      await vaultProvider.createNewVault(_nameController.text.trim(), password);
+
+      // 2. Setup biometrics if available
+      if (bioService.isBiometricAvailable) {
+        final setupBio = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Enable Biometrics'),
+            content: const Text(
+              'Would you like to use biometrics for quicker access to your vault? Your master password is still required for recovery on other devices.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('No, thanks'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Enable Biometrics'),
+              ),
+            ],
+          ),
+        );
+
+        if (setupBio == true) {
+          final masterKey = vaultProvider.currentMasterKeyBase64;
+          if (masterKey != null) {
+            await bioService.enableBiometrics(masterKey);
+          }
+        }
+      }
+
       if (mounted) {
-         // Navigate to Dashboard
-         Navigator.of(context).pushReplacement(
-           MaterialPageRoute(builder: (_) => const DashboardScreen()),
-         );
+        Navigator.of(
+          context,
+        ).pushReplacement(FadePageRoute(child: const NavBarWrapper()));
       }
     } catch (e) {
-       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error creating vault: $e')),
-        );
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error creating vault: $e')));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -54,49 +90,129 @@ class _CreateVaultScreenState extends State<CreateVaultScreen> {
 
   @override
   Widget build(BuildContext context) {
+    const primaryRed = Color(0xFFD32F2F);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Setup New Vault')),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          children: [
-            const Text(
-              'Create a Master Password. This password is the ONLY way to access your data. We cannot recover it for you.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16),
-            ),
-            const SizedBox(height: 32),
-            TextField(
-              controller: _passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Master Password',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _confirmController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Confirm Password',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 32),
-            if (_isLoading)
-              const CircularProgressIndicator()
-            else
-              ElevatedButton(
-                onPressed: _createVault,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFD32F2F),
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 50),
+      appBar: const BrandedAppBar(title: 'MERO VAULT'),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.account_balance_wallet_rounded,
+                  size: 60,
+                  color: primaryRed,
                 ),
-                child: const Text('Create Vault'),
-              ),
-          ],
+                const SizedBox(height: 24),
+                const Text(
+                  'Create Your Secure Vault',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Your data is encrypted locally with your Master Password.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: Colors.grey),
+                ),
+                const SizedBox(height: 32),
+                TextFormField(
+                  controller: _nameController,
+                  decoration: InputDecoration(
+                    labelText: 'Vault Name',
+                    prefixIcon: const Icon(
+                      Icons.edit_rounded,
+                      color: primaryRed,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Enter a name' : null,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _passwordController,
+                  obscureText: !_isPasswordVisible,
+                  decoration: InputDecoration(
+                    labelText: 'Master Password',
+                    prefixIcon: const Icon(
+                      Icons.lock_rounded,
+                      color: primaryRed,
+                    ),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _isPasswordVisible
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                        color: Colors.grey,
+                      ),
+                      onPressed: () => setState(
+                        () => _isPasswordVisible = !_isPasswordVisible,
+                      ),
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  validator: (v) => (v == null || v.length < 8)
+                      ? 'Password must be at least 8 characters'
+                      : null,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _confirmPasswordController,
+                  obscureText: !_isPasswordVisible,
+                  decoration: InputDecoration(
+                    labelText: 'Confirm Master Password',
+                    prefixIcon: const Icon(
+                      Icons.lock_clock_rounded,
+                      color: primaryRed,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  validator: (v) => v != _passwordController.text
+                      ? 'Passwords do not match'
+                      : null,
+                ),
+                const SizedBox(height: 32),
+                if (_isLoading)
+                  const CircularProgressIndicator(color: primaryRed)
+                else
+                  ElevatedButton(
+                    onPressed: _createVault,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryRed,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(double.infinity, 60),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'CREATE SECURE VAULT',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                const Text(
+                  'IMPORTANT: If you forget your Master Password, your data cannot be recovered. We do not store it.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.red,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../../services/biometric_service.dart';
 import '../../providers/vault_provider.dart';
 import '../home/dashboard_screen.dart';
@@ -32,7 +30,7 @@ class _UnlockScreenState extends State<UnlockScreen> {
       final success = await bioService.authenticate();
       if (success) {
         if (mounted) {
-           _unlockWithBiometrics();
+          _unlockWithBiometrics();
         }
       }
     }
@@ -48,31 +46,31 @@ class _UnlockScreenState extends State<UnlockScreen> {
 
   Future<void> _unlockWithPassword() async {
     setState(() => _isLoading = true);
-    
+
     try {
       final vaultProvider = Provider.of<VaultProvider>(context, listen: false);
       final success = await vaultProvider.unlock(_passwordController.text);
-      
+
       if (mounted) {
         if (success) {
-           ScaffoldMessenger.of(context).showSnackBar(
-             const SnackBar(content: Text('Unlocked!')),
-           );
-           // Navigate to Dashboard
-           Navigator.of(context).pushReplacement(
-             MaterialPageRoute(builder: (_) => const DashboardScreen()),
-           );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Unlocked!')));
+          // Navigate to Dashboard
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const DashboardScreen()),
+          );
         } else {
-           ScaffoldMessenger.of(context).showSnackBar(
-             const SnackBar(content: Text('Incorrect Password or Error')),
-           );
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Incorrect Password or Error')),
+          );
         }
       }
     } catch (e) {
-       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error unlocking: $e')),
-        );
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error unlocking: $e')));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -90,7 +88,11 @@ class _UnlockScreenState extends State<UnlockScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.lock_outline, size: 80, color: Color(0xFFD32F2F)),
+              const Icon(
+                Icons.lock_outline,
+                size: 80,
+                color: Color(0xFFD32F2F),
+              ),
               const SizedBox(height: 24),
               const Text(
                 'Unlock Mero Vault',
@@ -102,7 +104,9 @@ class _UnlockScreenState extends State<UnlockScreen> {
                 obscureText: true,
                 decoration: InputDecoration(
                   labelText: 'Master Password',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   prefixIcon: const Icon(Icons.key),
                 ),
               ),

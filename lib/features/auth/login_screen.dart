@@ -17,12 +17,9 @@ class LoginScreen extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               // Logo
-              Image.asset(
-                'assets/images/logo.png',
-                height: 150,
-              ),
+              Image.asset('assets/images/logo.png', height: 150),
               const SizedBox(height: 48),
-              
+
               const Text(
                 'Mero Vault',
                 style: TextStyle(
@@ -34,15 +31,11 @@ class LoginScreen extends StatelessWidget {
               const SizedBox(height: 16),
               const Text(
                 'Secure. Private. Yours.',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey,
-                ),
+                style: TextStyle(fontSize: 16, color: Colors.grey),
               ),
               const SizedBox(height: 64),
 
-              // Login Button
-              ElevatedButton.icon(
+              ElevatedButton(
                 onPressed: () async {
                   try {
                     await authService.signIn();
@@ -54,16 +47,41 @@ class LoginScreen extends StatelessWidget {
                     }
                   }
                 },
-                icon: const Icon(Icons.login),
-                label: const Text('Sign in with Google'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.black87,
-                  minimumSize: const Size(double.infinity, 50),
-                  elevation: 2,
+                  backgroundColor: const Color(0xFFD32F2F),
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 56),
+                  elevation: 4,
+                  shadowColor: Colors.black26,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(16),
                   ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Image.asset(
+                        'assets/images/icons8-google-48.png',
+                        height: 20,
+                        width: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    const Text(
+                      'Sign in with Google',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

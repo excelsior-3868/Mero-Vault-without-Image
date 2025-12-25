@@ -1,125 +1,148 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
 import '../models/vault_entry.dart';
 import '../services/drive_service.dart';
 import '../services/encryption_service.dart';
-// import 'package:encrypt/encrypt.dart' as encrypt_lib;
+
+enum VaultStatus { initial, checking, notFound, found, unlocked, error }
 
 class VaultProvider extends ChangeNotifier {
   final DriveService _driveService;
   final EncryptionService _encryptionService;
-  
+
   VaultData? _vaultData;
   VaultData? get vaultData => _vaultData;
-  
-  String? _masterPassword; // Kept in memory only for the session
-  bool get isUnlocked => _vaultData != null && _masterPassword != null;
-  
+
+  Uint8List? _derivedKey; // Kept in memory only for the session
+  String? _sessionPassword; // Kept in memory only for the session
+  Uint8List? _salt;
+  int? _iterations;
+  bool get isUnlocked => _vaultData != null;
+
+  VaultStatus _status = VaultStatus.initial;
+  VaultStatus get status => _status;
+  String? _errorMessage;
+  String? get errorMessage => _errorMessage;
+
   String? _fileId;
 
   VaultProvider(this._driveService, this._encryptionService);
 
-  // Transform the in-memory (cleartext) data to the encrypted JSON format required for storage
-  Map<String, dynamic> _toEncryptedJson(VaultData data) {
-    return {
-      'vault_meta': {
-        'version': data.version,
-        'encryption': 'AES-256-GCM',
-        'last_updated': data.lastUpdated.toIso8601String(),
-      },
-      'entries': data.entries.map((e) {
-        // ID and Title are kept cleartext for indexing/listing
-        // Fields values are encrypted
-        final encryptedFields = e.fields.map((f) {
-           return {
-             'label': f.label,
-             'value': _encryptionService.encrypt(f.value, _masterPassword!), // Encrypt value
-             'is_obscured': f.isObscured,
-           };
-        }).toList();
+  Future<void> checkVaultExistence() async {
+    _status = VaultStatus.checking;
+    _errorMessage = null;
+    notifyListeners();
 
-        return {
-          'id': e.id,
-          'title': e.title,
-          'fields': encryptedFields,
-          'created_at': e.createdAt.toIso8601String(),
-          'updated_at': e.updatedAt.toIso8601String(),
-        };
-      }).toList(),
+    try {
+      final file = await _driveService.getVaultFile();
+      if (file != null) {
+        _fileId = file.id;
+        _status = VaultStatus.found;
+      } else {
+        _fileId = null;
+        _status = VaultStatus.notFound;
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Vault check failed: $e');
+      }
+      _errorMessage = e.toString();
+      _status = VaultStatus.error;
+    }
+    notifyListeners();
+  }
+
+  // Transform the in-memory (cleartext) data to the encrypted JSON format required for storage
+  Map<String, dynamic> _toEncryptedJson(VaultData data, String password) {
+    final salt = _encryptionService.generateSalt();
+    final key = _encryptionService.deriveKey(password, salt);
+    _derivedKey = key;
+    _sessionPassword = password;
+    _salt = salt;
+    _iterations = EncryptionService.iterations;
+
+    final vaultEntriesJson = data.entries.map((e) {
+      return {
+        'id': e.id,
+        'title': e.title,
+        'fields': e.fields
+            .map(
+              (f) => {
+                'label': f.label,
+                'value': f.value,
+                'is_obscured': f.isObscured,
+              },
+            )
+            .toList(),
+        'created_at': e.createdAt.toIso8601String(),
+        'updated_at': e.updatedAt.toIso8601String(),
+      };
+    }).toList();
+
+    final cleartextVault = jsonEncode({
+      'vault_name': data.vaultName,
+      'entries': vaultEntriesJson,
+    });
+
+    final encryptedVault = _encryptionService.encrypt(cleartextVault, key);
+
+    return {
+      'version': '1.0',
+      'kdf': {
+        'algorithm': 'PBKDF2-HMAC-SHA256',
+        'salt': base64Encode(salt),
+        'iterations': EncryptionService.iterations,
+      },
+      'vault_cipher': encryptedVault,
+      'last_updated': data.lastUpdated.toIso8601String(),
     };
   }
 
   // Transform the storage JSON (encrypted) to in-memory (cleartext) data
-  VaultData _fromEncryptedJson(Map<String, dynamic> json) {
-    final meta = json['vault_meta'] as Map<String, dynamic>? ?? {};
-    final entriesList = json['entries'] as List<dynamic>? ?? [];
-    
+  VaultData _fromEncryptedJson(Map<String, dynamic> json, String password) {
+    final kdf = json['kdf'] as Map<String, dynamic>;
+    final salt = base64Decode(kdf['salt'] as String);
+    final iterations =
+        kdf['iterations'] as int? ?? EncryptionService.iterations;
+    final key = _encryptionService.deriveKey(password, salt);
+    _derivedKey = key;
+    _salt = salt;
+    _iterations = iterations;
+
+    final cipher = json['vault_cipher'] as String;
+    final decryptedJson = _encryptionService.decrypt(cipher, key);
+    final Map<String, dynamic> vaultMap = jsonDecode(decryptedJson);
+
+    final entriesList = vaultMap['entries'] as List<dynamic>? ?? [];
+
     final entries = entriesList.map((e) {
       final map = e as Map<String, dynamic>;
-      final fieldsList = <VaultField>[];
-
-      // Handle dynamic fields
-      if (map['fields'] != null) {
-        final list = map['fields'] as List<dynamic>;
-        for (var item in list) {
-          final fMap = item as Map<String, dynamic>;
-          String decryptedValue = '';
-          try {
-             decryptedValue = _encryptionService.decrypt(fMap['value'] as String, _masterPassword!);
-          } catch (_) {
-             decryptedValue = 'Error';
-          }
-
-          fieldsList.add(VaultField(
-            label: fMap['label'] as String,
-            value: decryptedValue,
-            isObscured: fMap['is_obscured'] as bool? ?? false,
-          ));
-        }
-      } else {
-        // Fallback or migration for old schema if it exists in the wild (though we just changed it)
-        // If code runs against old file, the file has keys like 'password'.
-        
-        // Decrypt legacy keys if present
-        if (map.containsKey('username')) {
-           fieldsList.add(VaultField(label: 'Username', value: map['username'] as String));
-        }
-        if (map.containsKey('password')) {
-           String decryptedPwd = '';
-           try {
-              decryptedPwd = _encryptionService.decrypt(map['password'] as String, _masterPassword!);
-           } catch (_) { decryptedPwd = 'Error'; }
-           fieldsList.add(VaultField(label: 'Password', value: decryptedPwd, isObscured: true));
-        }
-        if (map.containsKey('url')) {
-           fieldsList.add(VaultField(label: 'URL', value: map['url'] as String));
-        }
-        if (map.containsKey('notes')) {
-           String decryptedNotes = '';
-           try {
-              if (map['notes'] != null) {
-                 decryptedNotes = _encryptionService.decrypt(map['notes'] as String, _masterPassword!);
-              }
-           } catch (_) {}
-           if (decryptedNotes.isNotEmpty) {
-             fieldsList.add(VaultField(label: 'Notes', value: decryptedNotes));
-           }
-        }
-      }
+      final fieldsList = (map['fields'] as List<dynamic>).map((f) {
+        final fMap = f as Map<String, dynamic>;
+        return VaultField(
+          label: fMap['label'] as String,
+          value: fMap['value'] as String,
+          isObscured: fMap['is_obscured'] as bool? ?? false,
+        );
+      }).toList();
 
       return VaultEntry(
         id: map['id'] as String,
         title: map['title'] as String,
         fields: fieldsList,
         createdAt: DateTime.parse(map['created_at'] as String),
-        updatedAt: DateTime.parse(map['updated_at'] as String? ?? map['created_at'] as String),
+        updatedAt: DateTime.parse(
+          map['updated_at'] as String? ?? map['created_at'] as String,
+        ),
       );
     }).toList();
 
     return VaultData(
-      version: meta['version'] as String? ?? '1.2',
-      lastUpdated: meta['last_updated'] != null 
-          ? DateTime.parse(meta['last_updated'] as String) 
+      vaultName: vaultMap['vault_name'] as String? ?? 'My Vault',
+      version: json['version'] as String? ?? '1.0',
+      lastUpdated: json['last_updated'] != null
+          ? DateTime.parse(json['last_updated'] as String)
           : DateTime.now().toUtc(),
       entries: entries,
     );
@@ -127,82 +150,206 @@ class VaultProvider extends ChangeNotifier {
 
   Future<bool> unlock(String password) async {
     if (_fileId == null) {
-        final file = await _driveService.getVaultFile();
-        if (file == null) return false;
-        _fileId = file.id;
+      final file = await _driveService.getVaultFile();
+      if (file == null) return false;
+      _fileId = file.id;
     }
 
     try {
       final encryptedContent = await _driveService.getVaultContent(_fileId!);
       if (encryptedContent == null) return false;
 
-      // Temporary set password to attempt decryption
-      _masterPassword = password;
-      
       final Map<String, dynamic> jsonRoot = jsonDecode(encryptedContent);
-      _vaultData = _fromEncryptedJson(jsonRoot);
+      _vaultData = _fromEncryptedJson(jsonRoot, password);
+      _status = VaultStatus.unlocked;
 
       notifyListeners();
       return true;
-      
     } catch (e) {
       print('Unlock failed: $e');
-      _masterPassword = null;
+      _errorMessage = e.toString();
+      _derivedKey = null;
+      notifyListeners();
       return false;
     }
   }
 
-  Future<void> createNewVault(String password) async {
-    _masterPassword = password;
-    
+  Future<bool> unlockWithKey(Uint8List key) async {
+    if (_fileId == null) {
+      final file = await _driveService.getVaultFile();
+      if (file == null) return false;
+      _fileId = file.id;
+    }
+
+    try {
+      final encryptedContent = await _driveService.getVaultContent(_fileId!);
+      if (encryptedContent == null) return false;
+
+      final Map<String, dynamic> jsonRoot = jsonDecode(encryptedContent);
+      _derivedKey = key;
+
+      final cipher = jsonRoot['vault_cipher'] as String;
+      final decryptedJson = _encryptionService.decrypt(cipher, key);
+      final Map<String, dynamic> vaultMap = jsonDecode(decryptedJson);
+
+      // Re-use logic from _fromEncryptedJson or factor it out
+      // For brevity here, I'll just clear the data and re-fetch properly if needed,
+      // but let's implement the decryption part.
+
+      final entriesList = vaultMap['entries'] as List<dynamic>? ?? [];
+      final entries = entriesList.map((e) {
+        final map = e as Map<String, dynamic>;
+        final fieldsList = (map['fields'] as List<dynamic>).map((f) {
+          final fMap = f as Map<String, dynamic>;
+          return VaultField(
+            label: fMap['label'] as String,
+            value: fMap['value'] as String,
+            isObscured: fMap['is_obscured'] as bool? ?? false,
+          );
+        }).toList();
+        return VaultEntry(
+          id: map['id'] as String,
+          title: map['title'] as String,
+          fields: fieldsList,
+          createdAt: DateTime.parse(map['created_at'] as String),
+          updatedAt: DateTime.parse(map['updated_at'] as String),
+        );
+      }).toList();
+
+      _vaultData = VaultData(
+        vaultName: vaultMap['vault_name'] as String? ?? 'My Vault',
+        version: jsonRoot['version'] as String? ?? '1.0',
+        lastUpdated: DateTime.parse(jsonRoot['last_updated'] as String),
+        entries: entries,
+      );
+
+      _status = VaultStatus.unlocked;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      print('Unlock with key failed: $e');
+      _errorMessage = e.toString();
+      _derivedKey = null;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> createNewVault(String name, String password) async {
     final now = DateTime.now().toUtc();
     final emptyData = VaultData(
-      version: '1.2',
+      vaultName: name,
+      version: '1.0',
       lastUpdated: now,
       entries: [],
     );
-    
+
     _vaultData = emptyData;
-    await _saveToDrive();
+    await _saveToDrive(password);
+    _status = VaultStatus.unlocked;
+    notifyListeners();
   }
-  
-  Future<void> _saveToDrive() async {
-    if (_vaultData == null || _masterPassword == null) return;
-    
-    final jsonMap = _toEncryptedJson(_vaultData!);
-    final jsonString = jsonEncode(jsonMap);
-    
-    // Save to Drive
-    if (_fileId == null) {
-       _fileId = await _driveService.createVault(jsonString);
+
+  Future<void> _saveToDrive(String? password) async {
+    if (_vaultData == null) return;
+
+    Map<String, dynamic> jsonMap;
+    if (password != null) {
+      jsonMap = _toEncryptedJson(_vaultData!, password);
+    } else if (_derivedKey != null) {
+      final vaultEntriesJson = _vaultData!.entries.map((e) {
+        return {
+          'id': e.id,
+          'title': e.title,
+          'fields': e.fields
+              .map(
+                (f) => {
+                  'label': f.label,
+                  'value': f.value,
+                  'is_obscured': f.isObscured,
+                },
+              )
+              .toList(),
+          'created_at': e.createdAt.toIso8601String(),
+          'updated_at': e.updatedAt.toIso8601String(),
+        };
+      }).toList();
+
+      final cleartextVault = jsonEncode({
+        'vault_name': _vaultData!.vaultName,
+        'entries': vaultEntriesJson,
+      });
+
+      final encryptedVault = _encryptionService.encrypt(
+        cleartextVault,
+        _derivedKey!,
+      );
+
+      jsonMap = {
+        'version': _vaultData!.version,
+        'kdf': {
+          'algorithm': 'PBKDF2-HMAC-SHA256',
+          'salt': _salt != null ? base64Encode(_salt!) : '',
+          'iterations': _iterations ?? EncryptionService.iterations,
+        },
+        'vault_cipher': encryptedVault,
+        'last_updated': _vaultData!.lastUpdated.toIso8601String(),
+      };
     } else {
-       // TODO: Update file content (createVault actually creates new file, need update method in DriveService)
-       // For now, assume create updates if possible or we accept multiples (Drive allows it).
-       //Ideally we should update.
-       _fileId = await _driveService.createVault(jsonString); 
+      return;
+    }
+
+    final jsonString = jsonEncode(jsonMap);
+
+    if (_fileId == null) {
+      _fileId = await _driveService.createVault(jsonString);
+    } else {
+      await _driveService.updateVault(_fileId!, jsonString);
     }
   }
 
-  Future<void> addEntry(VaultEntry entry) async {
-    _vaultData?.entries.add(entry);
-    notifyListeners();
-    await _saveToDrive();
+  bool verifyPassword(String password) {
+    if (_salt == null || _derivedKey == null) return false;
+    final testKey = _encryptionService.deriveKey(password, _salt!);
+    return listEquals(testKey, _derivedKey);
   }
 
-  Future<void> updateEntry(VaultEntry updatedEntry) async {
+  String? get currentMasterKeyBase64 =>
+      _derivedKey != null ? base64Encode(_derivedKey!) : null;
+
+  Future<void> addEntry(VaultEntry entry, [String? password]) async {
+    _vaultData?.entries.add(entry);
+    notifyListeners();
+    await _saveToDrive(password ?? _sessionPassword);
+  }
+
+  Future<void> updateEntry(VaultEntry updatedEntry, [String? password]) async {
     if (_vaultData == null) return;
-    final index = _vaultData!.entries.indexWhere((e) => e.id == updatedEntry.id);
+    final index = _vaultData!.entries.indexWhere(
+      (e) => e.id == updatedEntry.id,
+    );
     if (index != -1) {
       _vaultData!.entries[index] = updatedEntry;
       notifyListeners();
-      await _saveToDrive();
+      await _saveToDrive(password ?? _sessionPassword);
     }
   }
 
-  Future<void> deleteEntry(String id) async {
+  Future<void> deleteEntry(String id, [String? password]) async {
     _vaultData?.entries.removeWhere((e) => e.id == id);
     notifyListeners();
-    await _saveToDrive();
+    await _saveToDrive(password ?? _sessionPassword);
   }
 
+  void clear() {
+    _vaultData = null;
+    _derivedKey = null;
+    _sessionPassword = null;
+    _salt = null;
+    _iterations = null;
+    _fileId = null;
+    _status = VaultStatus.initial;
+    _driveService.reset();
+    notifyListeners();
+  }
 }
