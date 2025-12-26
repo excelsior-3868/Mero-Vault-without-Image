@@ -7,6 +7,7 @@ import '../../widgets/branded_app_bar.dart';
 import '../../widgets/toast_notification.dart';
 import '../auth/create_vault_screen.dart';
 import '../../main.dart';
+import 'about_app_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -68,17 +69,24 @@ class ProfileScreen extends StatelessWidget {
                   _buildMenuCard([
                     _buildMenuItem(
                       icon: Icons.info_outline_rounded,
-                      color: Colors.grey,
-                      title: 'App Version',
-                      subtitle: 'v1.2.0 (Stable)',
-                      onTap: () {},
+                      color: const Color(0xFF0066CC),
+                      title: 'About Mero Vault',
+                      subtitle: 'App info, features & security',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const AboutAppScreen(),
+                          ),
+                        );
+                      },
                     ),
                     const Divider(height: 1, indent: 56),
                     _buildMenuItem(
                       icon: Icons.code_rounded,
                       color: Colors.grey,
-                      title: 'Developer',
-                      subtitle: 'Subin Bajracharya',
+                      title: 'App Version',
+                      subtitle: 'v1.0.0 (Stable)',
                       onTap: () {},
                     ),
                   ]),

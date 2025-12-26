@@ -291,16 +291,28 @@ class EntryDetailScreen extends StatelessWidget {
       final authenticated = await SecurityUtils.authenticate(context);
 
       if (authenticated && context.mounted) {
-        await Provider.of<VaultProvider>(
+        final success = await Provider.of<VaultProvider>(
           context,
           listen: false,
         ).deleteEntry(entry.id);
-        Navigator.pop(context);
+
+        if (context.mounted) {
+          if (success) {
+            Navigator.pop(context);
+            ToastNotification.show(context, 'Entry deleted successfully');
+          } else {
+            ToastNotification.show(
+              context,
+              'Failed to delete entry. Please check your internet connection.',
+              isError: true,
+            );
+          }
+        }
       } else if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Deletion aborted. Authentication failed.'),
-          ),
+        ToastNotification.show(
+          context,
+          'Deletion aborted. Authentication failed.',
+          isError: true,
         );
       }
     }

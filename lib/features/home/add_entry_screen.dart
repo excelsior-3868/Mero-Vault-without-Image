@@ -122,6 +122,7 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           )
           .toList();
 
+      final bool success;
       if (widget.entryToEdit != null) {
         final updatedEntry = VaultEntry(
           id: widget.entryToEdit!.id,
@@ -130,23 +131,31 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
           createdAt: widget.entryToEdit!.createdAt,
           updatedAt: DateTime.now().toUtc(),
         );
-        await provider.updateEntry(updatedEntry);
+        success = await provider.updateEntry(updatedEntry);
       } else {
         final entry = VaultEntry.create(
           title: _titleController.text,
           fields: vaultFields,
         );
-        await provider.addEntry(entry);
+        success = await provider.addEntry(entry);
       }
 
       if (mounted) {
-        Navigator.pop(context);
-        ToastNotification.show(
-          context,
-          widget.entryToEdit != null
-              ? 'Entry updated successfully'
-              : 'Entry saved to vault',
-        );
+        if (success) {
+          Navigator.pop(context);
+          ToastNotification.show(
+            context,
+            widget.entryToEdit != null
+                ? 'Entry updated successfully'
+                : 'Entry saved to vault',
+          );
+        } else {
+          ToastNotification.show(
+            context,
+            'Failed to save entry. Please check your internet connection and try again.',
+            isError: true,
+          );
+        }
       }
     } catch (e) {
       if (mounted) {

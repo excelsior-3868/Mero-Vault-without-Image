@@ -190,6 +190,31 @@ class _InitializationScreenState extends State<InitializationScreen> {
                     ),
                   ),
                 ] else if (_showPasswordInput) ...[
+                  // Show which Google account is being used
+                  Consumer<AuthService>(
+                    builder: (context, auth, _) {
+                      final email = auth.currentUser?.email ?? 'Unknown';
+                      return Column(
+                        children: [
+                          const Icon(
+                            Icons.account_circle,
+                            size: 48,
+                            color: Colors.grey,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            email,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey.shade700,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                        ],
+                      );
+                    },
+                  ),
                   const Text(
                     'SECURE UNLOCK',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),

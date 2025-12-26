@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
@@ -53,11 +54,20 @@ class AuthService extends ChangeNotifier {
   Future<void> signIn() async {
     try {
       _manuallyLoggedOut = false;
-      final account = await _googleSignIn.signIn();
+
+      // Wrap in Future.microtask to avoid main thread deadlock
+      final account = await Future.microtask(() => _googleSignIn.signIn());
+
       if (account != null) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('is_logged_in', true);
       }
+    } on PlatformException catch (e) {
+      if (kDebugMode) {
+        print('Platform exception during sign in: ${e.message}');
+      }
+      // Rethrow with more context
+      throw Exception('Google Sign-In failed: ${e.message ?? "Unknown error"}');
     } catch (error) {
       if (kDebugMode) {
         print('Sign in failed: $error');

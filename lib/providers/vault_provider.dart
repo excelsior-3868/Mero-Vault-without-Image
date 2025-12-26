@@ -26,23 +26,44 @@ class VaultProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
 
   String? _fileId;
+  DateTime? _lastVaultCheck;
+  static const Duration _vaultCheckCooldown = Duration(seconds: 5);
 
   VaultProvider(this._driveService, this._encryptionService);
 
-  Future<void> checkVaultExistence() async {
+  Future<void> checkVaultExistence({bool force = false}) async {
+    // Prevent rapid repeated checks
+    if (!force && _lastVaultCheck != null) {
+      final timeSinceLastCheck = DateTime.now().difference(_lastVaultCheck!);
+      if (timeSinceLastCheck < _vaultCheckCooldown) {
+        if (kDebugMode) {
+          print(
+            'Skipping vault check (cooldown: ${_vaultCheckCooldown.inSeconds - timeSinceLastCheck.inSeconds}s remaining)',
+          );
+        }
+        return;
+      }
+    }
+
     _status = VaultStatus.checking;
     _errorMessage = null;
     notifyListeners();
 
     try {
+      if (kDebugMode) print('Checking vault existence...');
       final file = await _driveService.getVaultFile();
+
       if (file != null) {
         _fileId = file.id;
         _status = VaultStatus.found;
+        if (kDebugMode) print('Vault found with ID: $_fileId');
       } else {
         _fileId = null;
         _status = VaultStatus.notFound;
+        if (kDebugMode) print('No vault found');
       }
+
+      _lastVaultCheck = DateTime.now();
     } catch (e) {
       if (kDebugMode) {
         print('Vault check failed: $e');
@@ -55,7 +76,8 @@ class VaultProvider extends ChangeNotifier {
 
   // Transform the in-memory (cleartext) data to the encrypted JSON format required for storage
   Map<String, dynamic> _toEncryptedJson(VaultData data, String password) {
-    final salt = _encryptionService.generateSalt();
+    // CRITICAL: Reuse existing salt if available, only generate new salt for brand new vaults
+    final salt = _salt ?? _encryptionService.generateSalt();
     final key = _encryptionService.deriveKey(password, salt);
     _derivedKey = key;
     _sessionPassword = password;
@@ -166,7 +188,7 @@ class VaultProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      print('Unlock failed: $e');
+      if (kDebugMode) print('Unlock failed: $e');
       _errorMessage = e.toString();
       _derivedKey = null;
       notifyListeners();
@@ -227,7 +249,7 @@ class VaultProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      print('Unlock with key failed: $e');
+      if (kDebugMode) print('Unlock with key failed: $e');
       _errorMessage = e.toString();
       _derivedKey = null;
       notifyListeners();
@@ -250,61 +272,90 @@ class VaultProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _saveToDrive(String? password) async {
-    if (_vaultData == null) return;
-
-    Map<String, dynamic> jsonMap;
-    if (password != null) {
-      jsonMap = _toEncryptedJson(_vaultData!, password);
-    } else if (_derivedKey != null) {
-      final vaultEntriesJson = _vaultData!.entries.map((e) {
-        return {
-          'id': e.id,
-          'title': e.title,
-          'fields': e.fields
-              .map(
-                (f) => {
-                  'label': f.label,
-                  'value': f.value,
-                  'is_obscured': f.isObscured,
-                },
-              )
-              .toList(),
-          'created_at': e.createdAt.toIso8601String(),
-          'updated_at': e.updatedAt.toIso8601String(),
-        };
-      }).toList();
-
-      final cleartextVault = jsonEncode({
-        'vault_name': _vaultData!.vaultName,
-        'entries': vaultEntriesJson,
-      });
-
-      final encryptedVault = _encryptionService.encrypt(
-        cleartextVault,
-        _derivedKey!,
-      );
-
-      jsonMap = {
-        'version': _vaultData!.version,
-        'kdf': {
-          'algorithm': 'PBKDF2-HMAC-SHA256',
-          'salt': _salt != null ? base64Encode(_salt!) : '',
-          'iterations': _iterations ?? EncryptionService.iterations,
-        },
-        'vault_cipher': encryptedVault,
-        'last_updated': _vaultData!.lastUpdated.toIso8601String(),
-      };
-    } else {
-      return;
+  Future<bool> _saveToDrive(String? password) async {
+    if (_vaultData == null) {
+      if (kDebugMode) print('Cannot save: vault data is null');
+      return false;
     }
 
-    final jsonString = jsonEncode(jsonMap);
+    try {
+      Map<String, dynamic> jsonMap;
+      if (password != null) {
+        jsonMap = _toEncryptedJson(_vaultData!, password);
+      } else if (_derivedKey != null) {
+        final vaultEntriesJson = _vaultData!.entries.map((e) {
+          return {
+            'id': e.id,
+            'title': e.title,
+            'fields': e.fields
+                .map(
+                  (f) => {
+                    'label': f.label,
+                    'value': f.value,
+                    'is_obscured': f.isObscured,
+                  },
+                )
+                .toList(),
+            'created_at': e.createdAt.toIso8601String(),
+            'updated_at': e.updatedAt.toIso8601String(),
+          };
+        }).toList();
 
-    if (_fileId == null) {
-      _fileId = await _driveService.createVault(jsonString);
-    } else {
-      await _driveService.updateVault(_fileId!, jsonString);
+        final cleartextVault = jsonEncode({
+          'vault_name': _vaultData!.vaultName,
+          'entries': vaultEntriesJson,
+        });
+
+        final encryptedVault = _encryptionService.encrypt(
+          cleartextVault,
+          _derivedKey!,
+        );
+
+        jsonMap = {
+          'version': _vaultData!.version,
+          'kdf': {
+            'algorithm': 'PBKDF2-HMAC-SHA256',
+            'salt': _salt != null ? base64Encode(_salt!) : '',
+            'iterations': _iterations ?? EncryptionService.iterations,
+          },
+          'vault_cipher': encryptedVault,
+          'last_updated': _vaultData!.lastUpdated.toIso8601String(),
+        };
+      } else {
+        if (kDebugMode) print('Cannot save: no password or derived key');
+        _errorMessage = 'No encryption key available';
+        return false;
+      }
+
+      final jsonString = jsonEncode(jsonMap);
+
+      if (_fileId == null) {
+        if (kDebugMode) print('Creating new vault file...');
+        _fileId = await _driveService.createVault(jsonString);
+        if (_fileId == null) {
+          _errorMessage = 'Failed to create vault file on Google Drive';
+          if (kDebugMode) print(_errorMessage);
+          return false;
+        }
+        if (kDebugMode) print('Vault created with ID: $_fileId');
+      } else {
+        if (kDebugMode) print('Updating existing vault file: $_fileId');
+        final success = await _driveService.updateVault(_fileId!, jsonString);
+        if (!success) {
+          _errorMessage = 'Failed to update vault on Google Drive';
+          if (kDebugMode) print(_errorMessage);
+          return false;
+        }
+        if (kDebugMode) print('Vault updated successfully');
+      }
+
+      _errorMessage = null;
+      return true;
+    } catch (e) {
+      _errorMessage = 'Error saving to Drive: $e';
+      if (kDebugMode) print(_errorMessage);
+      notifyListeners();
+      return false;
     }
   }
 
@@ -317,28 +368,115 @@ class VaultProvider extends ChangeNotifier {
   String? get currentMasterKeyBase64 =>
       _derivedKey != null ? base64Encode(_derivedKey!) : null;
 
-  Future<void> addEntry(VaultEntry entry, [String? password]) async {
-    _vaultData?.entries.add(entry);
+  Future<bool> addEntry(VaultEntry entry, [String? password]) async {
+    if (_vaultData == null) return false;
+
+    _vaultData!.entries.add(entry);
+
+    // Update lastUpdated timestamp
+    _vaultData = VaultData(
+      vaultName: _vaultData!.vaultName,
+      version: _vaultData!.version,
+      lastUpdated: DateTime.now().toUtc(),
+      entries: _vaultData!.entries,
+    );
+
     notifyListeners();
-    await _saveToDrive(password ?? _sessionPassword);
+
+    final success = await _saveToDrive(password ?? _sessionPassword);
+
+    if (!success) {
+      // Rollback on failure
+      _vaultData!.entries.removeLast();
+      _vaultData = VaultData(
+        vaultName: _vaultData!.vaultName,
+        version: _vaultData!.version,
+        lastUpdated: _vaultData!.lastUpdated,
+        entries: _vaultData!.entries,
+      );
+      notifyListeners();
+    }
+
+    return success;
   }
 
-  Future<void> updateEntry(VaultEntry updatedEntry, [String? password]) async {
-    if (_vaultData == null) return;
+  Future<bool> updateEntry(VaultEntry updatedEntry, [String? password]) async {
+    if (_vaultData == null) return false;
+
     final index = _vaultData!.entries.indexWhere(
       (e) => e.id == updatedEntry.id,
     );
-    if (index != -1) {
-      _vaultData!.entries[index] = updatedEntry;
+
+    if (index == -1) return false;
+
+    // Store old entry for rollback
+    final oldEntry = _vaultData!.entries[index];
+
+    _vaultData!.entries[index] = updatedEntry;
+
+    // Update lastUpdated timestamp
+    _vaultData = VaultData(
+      vaultName: _vaultData!.vaultName,
+      version: _vaultData!.version,
+      lastUpdated: DateTime.now().toUtc(),
+      entries: _vaultData!.entries,
+    );
+
+    notifyListeners();
+
+    final success = await _saveToDrive(password ?? _sessionPassword);
+
+    if (!success) {
+      // Rollback on failure
+      _vaultData!.entries[index] = oldEntry;
+      _vaultData = VaultData(
+        vaultName: _vaultData!.vaultName,
+        version: _vaultData!.version,
+        lastUpdated: _vaultData!.lastUpdated,
+        entries: _vaultData!.entries,
+      );
       notifyListeners();
-      await _saveToDrive(password ?? _sessionPassword);
     }
+
+    return success;
   }
 
-  Future<void> deleteEntry(String id, [String? password]) async {
-    _vaultData?.entries.removeWhere((e) => e.id == id);
+  Future<bool> deleteEntry(String id, [String? password]) async {
+    if (_vaultData == null) return false;
+
+    // Find and store the entry for potential rollback
+    final entryIndex = _vaultData!.entries.indexWhere((e) => e.id == id);
+    if (entryIndex == -1) return false;
+
+    final deletedEntry = _vaultData!.entries[entryIndex];
+
+    _vaultData!.entries.removeAt(entryIndex);
+
+    // Update lastUpdated timestamp
+    _vaultData = VaultData(
+      vaultName: _vaultData!.vaultName,
+      version: _vaultData!.version,
+      lastUpdated: DateTime.now().toUtc(),
+      entries: _vaultData!.entries,
+    );
+
     notifyListeners();
-    await _saveToDrive(password ?? _sessionPassword);
+
+    final success = await _saveToDrive(password ?? _sessionPassword);
+
+    if (!success) {
+      // Rollback on failure
+      _vaultData!.entries.insert(entryIndex, deletedEntry);
+      _vaultData = VaultData(
+        vaultName: _vaultData!.vaultName,
+        version: _vaultData!.version,
+        lastUpdated: _vaultData!.lastUpdated,
+        entries: _vaultData!.entries,
+      );
+      notifyListeners();
+    }
+
+    return success;
   }
 
   void clear() {

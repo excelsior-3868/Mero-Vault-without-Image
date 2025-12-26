@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 import '../../providers/vault_provider.dart';
 import '../navigation/nav_bar_wrapper.dart';
 import '../../services/biometric_service.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/branded_app_bar.dart';
 import '../../utils/transitions.dart';
+import 'login_screen.dart';
 
 class CreateVaultScreen extends StatefulWidget {
   const CreateVaultScreen({super.key});
@@ -208,6 +210,32 @@ class _CreateVaultScreenState extends State<CreateVaultScreen> {
                     fontSize: 12,
                     color: Colors.red,
                     fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                TextButton.icon(
+                  onPressed: () async {
+                    final authService = Provider.of<AuthService>(
+                      context,
+                      listen: false,
+                    );
+                    await authService.signOut();
+                    if (context.mounted) {
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(
+                          builder: (context) => const LoginScreen(),
+                        ),
+                        (route) => false,
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.exit_to_app, size: 20),
+                  label: const Text(
+                    'Wrong Account? Sign Out',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                  ),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.grey[600],
                   ),
                 ),
               ],
