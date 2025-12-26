@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../services/auth_service.dart';
 import '../../services/biometric_service.dart';
+import '../../services/drive_service.dart';
 import '../../providers/vault_provider.dart';
 import '../../widgets/branded_app_bar.dart';
 import '../../widgets/toast_notification.dart';
@@ -49,6 +53,14 @@ class ProfileScreen extends StatelessWidget {
                     _buildBiometricToggle(context),
                     const Divider(height: 1, indent: 56),
                     _buildMenuItem(
+                      icon: Icons.download_rounded,
+                      color: const Color(0xFF0066CC),
+                      title: 'Export Vault',
+                      subtitle: 'Download vault as readable JSON',
+                      onTap: () => _exportVault(context),
+                    ),
+                    const Divider(height: 1, indent: 56),
+                    _buildMenuItem(
                       icon: Icons.refresh_rounded,
                       color: Colors.orange,
                       title: 'Reset & Create New Vault',
@@ -64,6 +76,9 @@ class ProfileScreen extends StatelessWidget {
                       onTap: () => _showLogoutDialog(context, authService),
                     ),
                   ]),
+                  const SizedBox(height: 32),
+                  _buildSectionHeader('GOOGLE DRIVE STORAGE'),
+                  _buildStorageCard(context),
                   const SizedBox(height: 32),
                   _buildSectionHeader('ABOUT'),
                   _buildMenuCard([
@@ -287,6 +302,197 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildStorageCard(BuildContext context) {
+    final driveService = Provider.of<DriveService>(context, listen: false);
+
+    return FutureBuilder<StorageQuota?>(
+      future: driveService.getStorageQuota(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.all(20),
+            child: const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFD32F2F)),
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.hasError || !snapshot.hasData || snapshot.data == null) {
+          return Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.cloud_off_rounded,
+                  color: Colors.grey[400],
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Unable to fetch storage info',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final quota = snapshot.data!;
+        final percentage = quota.usagePercentage;
+        Color progressColor = const Color(0xFF4CAF50); // Green
+        if (quota.isCritical) {
+          progressColor = Colors.red;
+        } else if (quota.isLow) {
+          progressColor = Colors.orange;
+        }
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0066CC).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.cloud_rounded,
+                      color: Color(0xFF0066CC),
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Storage Usage',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                          ),
+                        ),
+                        Text(
+                          '${quota.usedFormatted} of ${quota.limitFormatted} used',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    '${percentage.toStringAsFixed(1)}%',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: progressColor,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: percentage / 100,
+                  minHeight: 8,
+                  backgroundColor: Colors.grey[200],
+                  valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${quota.availableFormatted} available',
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (quota.isLow)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: quota.isCritical
+                            ? Colors.red.shade50
+                            : Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: quota.isCritical
+                              ? Colors.red.shade200
+                              : Colors.orange.shade200,
+                        ),
+                      ),
+                      child: Text(
+                        quota.isCritical ? 'CRITICAL' : 'LOW',
+                        style: TextStyle(
+                          color: quota.isCritical
+                              ? Colors.red.shade700
+                              : Colors.orange.shade700,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _showResetDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -421,5 +627,118 @@ class ProfileScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _exportVault(BuildContext context) async {
+    try {
+      // Require authentication before export
+      final bioService = Provider.of<BiometricService>(context, listen: false);
+      final vaultProvider = Provider.of<VaultProvider>(context, listen: false);
+
+      bool authenticated = false;
+
+      // Try biometric authentication first
+      if (bioService.isEnabled) {
+        authenticated = await bioService.authenticate();
+      }
+
+      // If biometric fails or not enabled, ask for master password
+      if (!authenticated && context.mounted) {
+        final password = await showDialog<String>(
+          context: context,
+          builder: (context) {
+            final controller = TextEditingController();
+            return AlertDialog(
+              title: const Text('Verify Master Password'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Enter your master password to export vault data.',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    obscureText: true,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Master Password',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, controller.text),
+                  child: const Text('Verify'),
+                ),
+              ],
+            );
+          },
+        );
+
+        if (password != null && password.isNotEmpty) {
+          authenticated = await vaultProvider.unlock(password);
+        }
+      }
+
+      if (!authenticated) {
+        if (context.mounted) {
+          ToastNotification.show(
+            context,
+            'Authentication failed. Export cancelled.',
+            isError: true,
+          );
+        }
+        return;
+      }
+
+      // Export vault
+      if (context.mounted) {
+        ToastNotification.show(context, 'Exporting vault...');
+      }
+
+      final jsonString = vaultProvider.exportVaultAsJson();
+
+      // Create temporary file
+      final directory = await getTemporaryDirectory();
+      final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
+      final fileName = 'mero_vault_export_$timestamp.json';
+      final file = File('${directory.path}/$fileName');
+
+      await file.writeAsString(jsonString);
+
+      // Share the file
+      final result = await Share.shareXFiles(
+        [XFile(file.path)],
+        subject: 'Mero Vault Export',
+        text: 'Exported vault data from Mero Vault',
+      );
+
+      if (context.mounted) {
+        if (result.status == ShareResultStatus.success) {
+          ToastNotification.show(context, 'Vault exported successfully!');
+        }
+      }
+
+      // Clean up temporary file after a delay
+      Future.delayed(const Duration(seconds: 5), () {
+        file.delete().catchError((_) => file);
+      });
+    } catch (e) {
+      if (context.mounted) {
+        ToastNotification.show(
+          context,
+          'Export failed: ${e.toString()}',
+          isError: true,
+        );
+      }
+    }
   }
 }

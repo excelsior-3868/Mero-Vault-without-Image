@@ -18,11 +18,12 @@ class AboutAppScreen extends StatelessWidget {
             Center(
               child: Column(
                 children: [
-                  // Use actual logo instead of icon
+                  // Logo without background
                   Image.asset(
                     'assets/images/logo.png',
                     width: 120,
                     height: 120,
+                    fit: BoxFit.contain,
                   ),
                   const SizedBox(height: 16),
                   const Text(

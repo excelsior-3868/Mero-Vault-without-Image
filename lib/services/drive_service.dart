@@ -141,4 +141,83 @@ class DriveService {
       return false;
     }
   }
+
+  /// Get Google Drive storage quota information
+  Future<StorageQuota?> getStorageQuota() async {
+    final api = await _api;
+    if (api == null) {
+      if (kDebugMode) print('Error getting storage: Drive API not initialized');
+      return null;
+    }
+
+    try {
+      if (kDebugMode) print('Fetching storage quota...');
+      final about = await api.about.get($fields: 'storageQuota');
+
+      if (about.storageQuota != null) {
+        final quota = about.storageQuota!;
+        final limit = int.tryParse(quota.limit ?? '0') ?? 0;
+        final usage = int.tryParse(quota.usage ?? '0') ?? 0;
+
+        if (kDebugMode) {
+          print(
+            'Storage - Used: ${_formatBytes(usage)}, Total: ${_formatBytes(limit)}',
+          );
+        }
+
+        return StorageQuota(
+          limit: limit,
+          usage: usage,
+          usageInDrive: int.tryParse(quota.usageInDrive ?? '0') ?? 0,
+        );
+      }
+
+      return null;
+    } catch (e) {
+      if (kDebugMode) print('Error getting storage quota: $e');
+      return null;
+    }
+  }
+
+  /// Format bytes to human-readable format
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(2)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+}
+
+/// Storage quota information from Google Drive
+class StorageQuota {
+  final int limit;
+  final int usage;
+  final int usageInDrive;
+
+  StorageQuota({
+    required this.limit,
+    required this.usage,
+    required this.usageInDrive,
+  });
+
+  int get available => limit - usage;
+  double get usagePercentage => limit > 0 ? (usage / limit) * 100 : 0;
+
+  String get usedFormatted => _formatBytes(usage);
+  String get limitFormatted => _formatBytes(limit);
+  String get availableFormatted => _formatBytes(available);
+
+  bool get isLow => available < 10 * 1024 * 1024; // Less than 10MB
+  bool get isCritical => available < 1 * 1024 * 1024; // Less than 1MB
+
+  static String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(2)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
 }

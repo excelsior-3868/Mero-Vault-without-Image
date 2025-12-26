@@ -7,6 +7,8 @@ import '../services/encryption_service.dart';
 
 enum VaultStatus { initial, checking, notFound, found, unlocked, error }
 
+enum StorageWarning { ok, low, critical, unknown }
+
 class VaultProvider extends ChangeNotifier {
   final DriveService _driveService;
   final EncryptionService _encryptionService;
@@ -272,6 +274,31 @@ class VaultProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Check if there's enough storage before saving
+  Future<StorageWarning> checkStorageBeforeSave() async {
+    try {
+      final quota = await _driveService.getStorageQuota();
+
+      if (quota == null) {
+        // If we can't get quota, allow save but warn
+        return StorageWarning.unknown;
+      }
+
+      if (quota.isCritical) {
+        return StorageWarning.critical;
+      }
+
+      if (quota.isLow) {
+        return StorageWarning.low;
+      }
+
+      return StorageWarning.ok;
+    } catch (e) {
+      if (kDebugMode) print('Error checking storage: $e');
+      return StorageWarning.unknown;
+    }
+  }
+
   Future<bool> _saveToDrive(String? password) async {
     if (_vaultData == null) {
       if (kDebugMode) print('Cannot save: vault data is null');
@@ -489,5 +516,39 @@ class VaultProvider extends ChangeNotifier {
     _status = VaultStatus.initial;
     _driveService.reset();
     notifyListeners();
+  }
+
+  /// Export vault as readable JSON
+  String exportVaultAsJson() {
+    if (_vaultData == null) {
+      throw Exception('No vault loaded to export');
+    }
+
+    final exportData = {
+      'vault_name': _vaultData!.vaultName,
+      'version': _vaultData!.version,
+      'exported_at': DateTime.now().toUtc().toIso8601String(),
+      'last_updated': _vaultData!.lastUpdated.toIso8601String(),
+      'total_entries': _vaultData!.entries.length,
+      'entries': _vaultData!.entries.map((entry) {
+        return {
+          'id': entry.id,
+          'title': entry.title,
+          'created_at': entry.createdAt.toIso8601String(),
+          'updated_at': entry.updatedAt.toIso8601String(),
+          'fields': entry.fields.map((field) {
+            return {
+              'label': field.label,
+              'value': field.value,
+              'is_obscured': field.isObscured,
+            };
+          }).toList(),
+        };
+      }).toList(),
+    };
+
+    // Return formatted JSON with indentation
+    const encoder = JsonEncoder.withIndent('  ');
+    return encoder.convert(exportData);
   }
 }

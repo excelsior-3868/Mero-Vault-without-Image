@@ -112,6 +112,52 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
     try {
       final provider = Provider.of<VaultProvider>(context, listen: false);
 
+      // Check storage before saving
+      final storageWarning = await provider.checkStorageBeforeSave();
+
+      // Handle critical storage
+      if (storageWarning == StorageWarning.critical && mounted) {
+        setState(() => _isLoading = false);
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.red),
+                SizedBox(width: 8),
+                Text('Critical Storage'),
+              ],
+            ),
+            content: const Text(
+              'Your Google Drive storage is almost full (< 1MB available). Saving may fail. Do you want to proceed anyway?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Proceed Anyway'),
+              ),
+            ],
+          ),
+        );
+
+        if (proceed != true) return;
+        setState(() => _isLoading = true);
+      }
+
+      // Handle low storage
+      if (storageWarning == StorageWarning.low && mounted) {
+        ToastNotification.show(
+          context,
+          'Warning: Low storage space on Google Drive',
+          isError: true,
+        );
+      }
+
       final vaultFields = _fields
           .map(
             (c) => VaultField(
