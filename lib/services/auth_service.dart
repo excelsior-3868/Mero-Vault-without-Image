@@ -8,7 +8,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService extends ChangeNotifier {
   final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: [drive.DriveApi.driveAppdataScope],
+    scopes: [
+      drive.DriveApi.driveAppdataScope,
+      drive.DriveApi.driveMetadataReadOnlyScope, // For storage quota
+    ],
   );
 
   GoogleSignInAccount? _currentUser;

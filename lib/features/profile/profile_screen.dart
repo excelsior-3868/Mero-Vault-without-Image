@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import '../../services/auth_service.dart';
 import '../../services/biometric_service.dart';
 import '../../services/drive_service.dart';
@@ -699,38 +698,82 @@ class ProfileScreen extends StatelessWidget {
         return;
       }
 
+      // Ask user to choose format
+      if (!context.mounted) return;
+      final format = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Choose Export Format'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.code, color: Color(0xFF0066CC)),
+                title: const Text('JSON'),
+                subtitle: const Text('Structured data format'),
+                onTap: () => Navigator.pop(context, 'json'),
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.text_fields,
+                  color: Color(0xFF4CAF50),
+                ),
+                title: const Text('TXT'),
+                subtitle: const Text('Plain text format'),
+                onTap: () => Navigator.pop(context, 'txt'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (format == null || !context.mounted) return;
+
       // Export vault
       if (context.mounted) {
         ToastNotification.show(context, 'Exporting vault...');
       }
 
-      final jsonString = vaultProvider.exportVaultAsJson();
-
-      // Create temporary file
-      final directory = await getTemporaryDirectory();
+      final String exportString;
+      final String fileName;
       final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
-      final fileName = 'mero_vault_export_$timestamp.json';
-      final file = File('${directory.path}/$fileName');
 
-      await file.writeAsString(jsonString);
-
-      // Share the file
-      final result = await Share.shareXFiles(
-        [XFile(file.path)],
-        subject: 'Mero Vault Export',
-        text: 'Exported vault data from Mero Vault',
-      );
-
-      if (context.mounted) {
-        if (result.status == ShareResultStatus.success) {
-          ToastNotification.show(context, 'Vault exported successfully!');
-        }
+      if (format == 'txt') {
+        exportString = vaultProvider.exportVaultAsTxt();
+        fileName = 'mero_vault_export_$timestamp.txt';
+      } else {
+        exportString = vaultProvider.exportVaultAsJson();
+        fileName = 'mero_vault_export_$timestamp.json';
       }
 
-      // Clean up temporary file after a delay
-      Future.delayed(const Duration(seconds: 5), () {
-        file.delete().catchError((_) => file);
-      });
+      // Save directly to Downloads folder
+      Directory? directory;
+
+      if (Platform.isAndroid) {
+        // For Android, use Downloads directory
+        directory = Directory('/storage/emulated/0/Download');
+        if (!await directory.exists()) {
+          // Fallback to external storage
+          directory = await getExternalStorageDirectory();
+        }
+      } else {
+        // For other platforms, use documents directory
+        directory = await getApplicationDocumentsDirectory();
+      }
+
+      if (directory == null) {
+        throw Exception('Could not access storage directory');
+      }
+
+      final file = File('${directory.path}/$fileName');
+      await file.writeAsString(exportString);
+
+      if (context.mounted) {
+        ToastNotification.show(
+          context,
+          'Vault exported to Downloads/$fileName',
+        );
+      }
     } catch (e) {
       if (context.mounted) {
         ToastNotification.show(

@@ -112,18 +112,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ? _buildNoResultsState()
                       : entries.isEmpty && vaultData.entries.isEmpty
                       ? _buildEmptyState(context)
-                      : GridView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount:
-                                    3, // Changed from 2 to 3 cards per row
-                                childAspectRatio:
-                                    0.85, // Adjusted for 3 columns
-                                crossAxisSpacing: 10,
-                                mainAxisSpacing: 10,
-                              ),
+                      : ListView.separated(
+                          padding: const EdgeInsets.only(top: 8, bottom: 24),
                           itemCount: entries.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 8),
                           itemBuilder: (context, index) {
                             final entry = entries[index];
                             // Get subtitle
@@ -141,76 +134,62 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               subtitle = 'Secured Item';
                             }
 
-                            return InkWell(
-                              onTap: () => _showEntryDetails(context, entry),
-                              onLongPress: () => _showEntryMenu(context, entry),
-                              borderRadius: BorderRadius.circular(16),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.06),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
+                            return Container(
+                              margin: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.06),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 12,
                                 ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(
-                                    8,
-                                  ), // Reduced from 12 for 3 columns
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Container(
-                                        width:
-                                            40, // Reduced from 48 for 3 columns
-                                        height:
-                                            40, // Reduced from 48 for 3 columns
-                                        decoration: BoxDecoration(
-                                          color: const Color(
-                                            0xFF0066CC,
-                                          ).withOpacity(0.1),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                          Icons.shield_rounded,
-                                          color: Color(0xFF0066CC),
-                                          size:
-                                              20, // Reduced from 24 for 3 columns
-                                        ),
-                                      ),
-                                      const SizedBox(
-                                        height: 6,
-                                      ), // Reduced from 8
-                                      Text(
-                                        entry.title,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize:
-                                              12, // Reduced from 14 for 3 columns
-                                        ),
-                                        textAlign: TextAlign.center,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        subtitle,
-                                        style: TextStyle(
-                                          color: Colors.grey[600],
-                                          fontSize:
-                                              10, // Reduced from 11 for 3 columns
-                                        ),
-                                        textAlign: TextAlign.center,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
+                                leading: Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: const Color(
+                                      0xFF0066CC,
+                                    ).withOpacity(0.1),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.shield_rounded,
+                                    color: Color(0xFF0066CC),
+                                    size: 24,
                                   ),
                                 ),
+                                title: Text(
+                                  entry.title,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  subtitle,
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                trailing: const Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: Colors.grey,
+                                ),
+                                onTap: () => _showEntryDetails(context, entry),
+                                onLongPress: () =>
+                                    _showEntryMenu(context, entry),
                               ),
                             );
                           },

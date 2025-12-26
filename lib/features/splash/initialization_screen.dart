@@ -193,13 +193,22 @@ class _InitializationScreenState extends State<InitializationScreen> {
                   // Show which Google account is being used
                   Consumer<AuthService>(
                     builder: (context, auth, _) {
-                      final email = auth.currentUser?.email ?? 'Unknown';
+                      final user = auth.currentUser;
+                      final email = user?.email ?? 'Unknown';
                       return Column(
                         children: [
-                          const Icon(
-                            Icons.account_circle,
-                            size: 48,
-                            color: Colors.grey,
+                          CircleAvatar(
+                            radius: 32,
+                            backgroundImage: user?.photoUrl != null
+                                ? NetworkImage(user!.photoUrl!)
+                                : null,
+                            child: user?.photoUrl == null
+                                ? const Icon(
+                                    Icons.account_circle,
+                                    size: 48,
+                                    color: Colors.grey,
+                                  )
+                                : null,
                           ),
                           const SizedBox(height: 8),
                           Text(
