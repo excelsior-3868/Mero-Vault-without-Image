@@ -54,43 +54,7 @@ class EncryptionService {
     return IV.fromLength(16).bytes;
   }
 
-  /// Encrypts image bytes using the derived key
-  /// Returns base64-encoded encrypted bytes with IV prepended
-  String encryptImage(Uint8List imageBytes, Uint8List keyBytes) {
-    final key = Key(keyBytes);
-    final iv = IV.fromLength(12); // GCM standard IV length
-    final encrypter = Encrypter(AES(key, mode: AESMode.gcm));
 
-    // Convert bytes to base64 first, then encrypt
-    final base64Image = base64Encode(imageBytes);
-    final encrypted = encrypter.encrypt(base64Image, iv: iv);
-
-    // Return format: "iv:encryptedData" (both base64)
-    return '${iv.base64}:${encrypted.base64}';
-  }
-
-  /// Decrypts image bytes using the derived key
-  /// Input format: "iv:encryptedData" (both base64)
-  Uint8List decryptImage(String encryptedString, Uint8List keyBytes) {
-    try {
-      final parts = encryptedString.split(':');
-      if (parts.length != 2) throw Exception('Invalid encrypted image format');
-
-      final iv = IV.fromBase64(parts[0]);
-      final encrypted = Encrypted.fromBase64(parts[1]);
-
-      final key = Key(keyBytes);
-      final encrypter = Encrypter(AES(key, mode: AESMode.gcm));
-
-      // Decrypt to get base64 string
-      final decryptedBase64 = encrypter.decrypt(encrypted, iv: iv);
-
-      // Decode base64 to bytes
-      return base64Decode(decryptedBase64);
-    } catch (e) {
-      throw Exception('Image decryption failed: $e');
-    }
-  }
 }
 
 /// Helper class for PBKDF2 if not available in the library as direct sync

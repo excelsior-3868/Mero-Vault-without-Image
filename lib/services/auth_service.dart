@@ -10,7 +10,7 @@ class AuthService extends ChangeNotifier {
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: [
       drive.DriveApi.driveAppdataScope,
-      drive.DriveApi.driveMetadataReadOnlyScope, // For storage quota
+      drive.DriveApi.driveMetadataReadonlyScope, // For storage quota
     ],
   );
 

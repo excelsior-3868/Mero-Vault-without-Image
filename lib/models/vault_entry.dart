@@ -29,7 +29,6 @@ class VaultEntry {
   final String id;
   String title;
   List<VaultField> fields; // Dynamic fields
-  List<String> imageData; // Base64-encoded encrypted images
   final DateTime createdAt;
   DateTime updatedAt;
 
@@ -37,7 +36,6 @@ class VaultEntry {
     required this.id,
     required this.title,
     required this.fields,
-    this.imageData = const [],
     required this.createdAt,
     required this.updatedAt,
   });
@@ -45,14 +43,12 @@ class VaultEntry {
   factory VaultEntry.create({
     required String title,
     List<VaultField>? fields,
-    List<String>? imageData,
   }) {
     final now = DateTime.now().toUtc();
     return VaultEntry(
       id: const Uuid().v4(),
       title: title,
       fields: fields ?? [],
-      imageData: imageData ?? [],
       createdAt: now,
       updatedAt: now,
     );
@@ -88,19 +84,10 @@ class VaultEntry {
       }
     }
 
-    // Parse image data
-    final imageDataList = <String>[];
-    if (json['image_data'] != null) {
-      (json['image_data'] as List).forEach((v) {
-        imageDataList.add(v as String);
-      });
-    }
-
     return VaultEntry(
       id: json['id'] as String,
       title: json['title'] as String,
       fields: fieldsList,
-      imageData: imageDataList,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(
         json['updated_at'] as String? ?? json['created_at'] as String,
@@ -113,7 +100,6 @@ class VaultEntry {
       'id': id,
       'title': title,
       'fields': fields.map((e) => e.toJson()).toList(),
-      'image_data': imageData,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
